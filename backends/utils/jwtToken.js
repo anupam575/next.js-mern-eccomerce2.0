@@ -1,9 +1,14 @@
-import { generateAccessToken, generateRefreshToken } from "../models/userModel.js";
+
 import { formatUser } from "../utils/formatUser.js";
 
-const sendToken = (user, statusCode, res) => {
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+const sendToken = async (user, statusCode, res) => {
+  // 🔐 Token generate ONLY from user instance
+  const accessToken = user.getAccessToken();
+  const refreshToken = user.getRefreshToken();
+
+  // 💾 Save refresh token in DB
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
 
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -15,20 +20,14 @@ const sendToken = (user, statusCode, res) => {
     path: "/",
   });
 
-  const accessOptions = cookieOptions( 15 * 60 * 1000); // 15 mins
-  const refreshOptions = cookieOptions(7 * 24 * 60 * 60 * 1000); // 7 days
-
-  const safeuser = formatUser(user);
-
   res
     .status(statusCode)
-    .cookie("accessToken", accessToken, accessOptions)
-    .cookie("refreshToken", refreshToken, refreshOptions)
+    .cookie("accessToken", accessToken, cookieOptions(15 * 60 * 1000))
+    .cookie("refreshToken", refreshToken, cookieOptions(7 * 24 * 60 * 60 * 1000))
     .json({
       success: true,
-      user: safeuser,
+      user: formatUser(user),
     });
 };
 
-export default sendToken; // ✅ यह लाइन जरूरी है
-
+export default sendToken;
