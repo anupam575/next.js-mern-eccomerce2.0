@@ -1,3 +1,6 @@
+
+"use client";
+
 import axios from "axios";
 
 const BASE_URL =
@@ -7,52 +10,42 @@ console.log("🔗 Using API Base URL:", BASE_URL);
 
 const API = axios.create({
   baseURL: BASE_URL,
-  withCredentials: true,
+  withCredentials: true, // cookies automatically sent
 });
 
+// ---------- Token Refresh Queue Handling ----------
 let isRefreshing = false;
 let failedQueue = [];
 
-const processQueue = (error) => {
-  failedQueue.forEach((prom) => {
-    if (error) prom.reject(error);
-    else prom.resolve();
+const processQueue = (error, token = null) => {
+  console.log("🔄 Processing queued requests, error:", error);
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error);
+    else resolve(token);
   });
   failedQueue = [];
 };
-console.log("refresh tokn dund4", API.interceptors.response);
-console.log("refresh tokn dund6");
 
+// ---------- Response Interceptor ----------
 API.interceptors.response.use(
   (response) => response,
-
   async (error) => {
-    console.log("refresh tokn dund");
-
     const originalRequest = error.config;
 
-    // 🪵 Step 1: Log every error response
-    console.log("⚠️ API Error caught:", {
-      url: originalRequest?.url,
-      status: error.response?.status,
-    });
+    console.log("⚠️ API error caught:", error.response?.status, originalRequest.url);
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      console.log("🔐 Access token expired — trying refresh token...");
+      originalRequest._retry = true;
 
-      // 🪵 Step 2: Avoid infinite loop on refresh route itself
+      // Prevent infinite loop on refresh-token request
       if (originalRequest.url.includes("/refresh-token")) {
-        console.log("🚫 Refresh token also failed. Redirecting to login...");
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("user");
-          window.location.href = "/login";
-        }
+        console.log("🚫 Refresh token failed, redirecting to login");
+        if (typeof window !== "undefined") window.location.href = "/login";
         return Promise.reject(error);
       }
 
-      // 🪵 Step 3: Handle multiple failed requests while refreshing
       if (isRefreshing) {
-        console.log("⏳ Already refreshing token. Queuing request...");
+        console.log("⏳ Token refresh already in progress, queuing request");
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -60,38 +53,28 @@ API.interceptors.response.use(
           .catch((err) => Promise.reject(err));
       }
 
-      originalRequest._retry = true;
       isRefreshing = true;
 
       try {
         console.log("♻️ Calling /refresh-token endpoint...");
-        const refreshResponse = await API.get(
-          "/refresh-token",
-          {},
-          {
-            headers: { "Cache-Control": "no-cache" },
-          }
-        );
-        console.log("refresh tokn dund3");
+        const refreshResponse = await API.get("/refresh-token"); // no custom header
 
-        console.log("✅ Refresh successful:", refreshResponse.data);
-        processQueue(null);
-        return API(originalRequest);
+        console.log("✅ Refresh token response:", refreshResponse.data);
+
+        processQueue(null); // Retry all queued requests
+        return API(originalRequest); // Retry original request
       } catch (refreshError) {
-        console.error(
-          "❌ Refresh token request failed:",
-          refreshError.response?.data
-        );
-        processQueue(refreshError);
+        processQueue(refreshError); // Reject all queued requests
 
         if (typeof window !== "undefined") {
-          localStorage.removeItem("user");
+          console.log("🔴 Redirecting to login due to refresh failure");
           window.location.href = "/login";
         }
 
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
+        console.log("⏹ Token refresh process finished");
       }
     }
 
