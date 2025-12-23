@@ -57,22 +57,38 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ✅ Generate access token
-export const generateAccessToken = (user) => {
+// ✅ Generate Access Token
+userSchema.methods.getAccessToken = function () {
   return jwt.sign(
-    { id: user._id, role: user.role },
+    {
+      id: this._id,
+      role: this.role,
+    },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || "15m" }
+    {
+      expiresIn: process.env.JWT_EXPIRE || "15m",
+    }
   );
 };
 
-// ✅ Generate refresh token
-export const generateRefreshToken = (user) => {
+// ✅ Generate Refresh Token
+userSchema.methods.getRefreshToken = function () {
   return jwt.sign(
-    { id: user._id, role: user.role },
+    {
+      id: this._id,
+      role: this.role,
+    },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRE || "7d" }
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRE || "7d",
+    }
   );
+};
+
+// ✅ Clear refresh token (logout)
+userSchema.methods.clearRefreshToken = async function () {
+  this.refreshToken = null;
+  await this.save({ validateBeforeSave: false });
 };
 
 // ✅ Generate reset password token
